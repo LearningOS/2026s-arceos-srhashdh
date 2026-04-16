@@ -54,14 +54,16 @@ jobs:
         run: |
           SYSROOT=$(rustc --print sysroot)
           LLVM_BIN="$SYSROOT/lib/rustlib/x86_64-unknown-linux-gnu/bin"
-          cp "$LLVM_BIN/llvm-objcopy" ~/.cargo/bin/rust-objcopy
-          cp "$LLVM_BIN/llvm-objdump" ~/.cargo/bin/rust-objdump
+          ln -sf "$LLVM_BIN/llvm-objcopy" ~/.cargo/bin/rust-objcopy
+          ln -sf "$LLVM_BIN/llvm-objdump" ~/.cargo/bin/rust-objdump
 
       - name: Run basic
         id: basic_points
         run: |
           qemu-system-riscv64 --version
           cargo --version
+
+          cd arceos && cargo update -p indexmap --precise 2.6.0 && cd ..
 
           ./scripts/total-test.sh | tee tmp.txt
           score=$(cat tmp.txt | tail -n1)
