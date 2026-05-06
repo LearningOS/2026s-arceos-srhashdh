@@ -164,6 +164,40 @@ impl VfsNodeOps for DirNode {
             self.remove_node(name)
         }
     }
+    fn rename(&self, path1: &str, path2: &str) -> VfsResult{
+        let (src_name, src_rest) = split_path(path1);
+        if let Some(rest) = src_rest {
+            match src_name {
+                "" | "." => self.rename(rest, path2),
+                ".." => self.parent().ok_or(VfsError::NotFound)?.rename(rest, path2),
+                _ => {
+                    let subdir = self
+                        .children
+                        .read()
+                        .get(src_name)
+                        .ok_or(VfsError::NotFound)?
+                        .clone();
+                    subdir.rename(rest, path2)
+                }
+            }
+        }else{
+            let dst_name = path2.rsplit('/').next().ok_or(VfsError::InvalidInput)?;
+
+//            log::warn!("dst_name: {:?}", dst_name);
+            let mut children = self.children.write();
+
+            if children.contains_key(dst_name) {
+                return Err(VfsError::AlreadyExists);
+            }
+
+            let node = children.remove(src_name).ok_or(VfsError::NotFound)?;
+
+            children.insert(dst_name.into(), node);
+            Ok(())
+        }
+    }
+        
+         
 
     axfs_vfs::impl_vfs_dir_default! {}
 }
