@@ -8,7 +8,10 @@ use axtask::current;
 use axtask::TaskExtRef;
 use axhal::paging::MappingFlags;
 use arceos_posix_api as api;
-
+use memory_addr::VirtAddr;
+use memory_addr::VirtAddrRange;
+use alloc::vec;
+use axhal::mem::PAGE_SIZE_4K;
 const SYS_IOCTL: usize = 29;
 const SYS_OPENAT: usize = 56;
 const SYS_CLOSE: usize = 57;
@@ -140,7 +143,38 @@ fn sys_mmap(
     fd: i32,
     _offset: isize,
 ) -> isize {
-    unimplemented!("no sys_mmap!");
+    syscall_body!(sys_mmap, {
+        let prot = MmapProt::from_bits_truncate(prot);
+        let flags = MmapFlags::from_bits_truncate(flags);
+        let size = ((length + PAGE_SIZE_4K - 1) / PAGE_SIZE_4K) * PAGE_SIZE_4K;        
+        
+
+        let mapping_flags = prot.into();
+        let curr = current();
+        let mut uspace = curr.task_ext().aspace.lock();
+
+        let hint = if addr.is_null(){
+            uspace.base()
+        }else {
+            VirtAddr::from_usize(addr as usize)
+        };
+        let limit = VirtAddrRange::new(uspace.base(), uspace.end());
+        let map_addr = uspace.find_free_area(hint, size, limit).ok_or(LinuxError::ENOMEM)?;
+
+        if flags.contains(MmapFlags::MAP_ANONYMOUS) {
+            uspace.map_alloc(map_addr, size, mapping_flags, false)
+                .map_err(|_| LinuxError::ENOMEM)?;
+        }else {
+            uspace.map_alloc(map_addr, size, mapping_flags, true)
+                .map_err(|_| LinuxError::ENOMEM)?;
+            let file = api::get_file_like(fd)?;
+            let mut buf = vec![0u8; length];
+            let bytes_read = file.read(&mut buf)?;
+            uspace.write(map_addr, &buf[..bytes_read])?;
+            
+        }
+        Ok(map_addr.as_usize() as isize)
+    })
 }
 
 fn sys_openat(dfd: c_int, fname: *const c_char, flags: c_int, mode: api::ctypes::mode_t) -> isize {
